@@ -34,6 +34,8 @@ else
   TS_PORT=${TAILSCALE_PORT:-10527}
   TS_ACCEPT_DNS=${TAILSCALE_ACCEPT_DNS:-true}
   TS_ACCEPT_ROUTES=${TAILSCALE_ACCEPT_ROUTES:-true}
+  TS_VERBOSE=${TAILSCALE_VERBOSE:-false}
+  TS_EPHEMERAL=${TAILSCALE_EPHEMERAL:-true}
   
   # Update proxychains.conf
   if [ -n "${PROXYCHAINS_CONF_FILE:-}" ] && [ -f "$PROXYCHAINS_CONF_FILE" ]; then
@@ -46,10 +48,23 @@ else
       log "Enabling proxy_dns for MagicDNS"
       sed -i 's/^#proxy_dns/proxy_dns/' "$PROXYCHAINS_CONF_FILE"
     fi
+
+    # Enable quiet_mode if not verbose
+    if [ "$TS_VERBOSE" = "false" ]; then
+      log "Silencing proxychains output"
+      sed -i 's/^#quiet_mode/quiet_mode/' "$PROXYCHAINS_CONF_FILE"
+    fi
   fi
 
-  # Start tailscaled silently in background
-  tailscaled -verbose ${TAILSCALED_VERBOSE:-0} --tun=userspace-networking --socks5-server=localhost:$TS_PORT --state=$HOME/.tailscale.state --socket=$HOME/tailscaled.sock &
+  # Start tailscaled in background
+  if [ "$TS_VERBOSE" = "true" ]; then
+    TAILSCALED_LOG_CMD=""
+  else
+    TAILSCALED_LOG_CMD="> /dev/null 2>&1"
+  fi
+
+  # eval the command to handle the redirection properly
+  eval "tailscaled -verbose ${TAILSCALED_VERBOSE:-0} --tun=userspace-networking --socks5-server=localhost:$TS_PORT --state=$HOME/.tailscale.state --socket=$HOME/tailscaled.sock $TAILSCALED_LOG_CMD &"
   
   EXTRA_FLAGS=""
   if [ -n "${TAILSCALE_LOGIN_SERVER:-}" ]; then
