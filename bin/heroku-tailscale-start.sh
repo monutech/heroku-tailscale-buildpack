@@ -45,8 +45,8 @@ else
     
     # Enable proxy_dns if MagicDNS is enabled
     if [ "$TS_ACCEPT_DNS" = "true" ]; then
-      log "Enabling proxy_dns for MagicDNS"
-      sed -i 's/^#proxy_dns/proxy_dns/' "$PROXYCHAINS_CONF_FILE"
+      log "Enabling proxy_dns_daemon for MagicDNS"
+      # We already enabled it in the config file, but let's ensure the daemon starts
     fi
 
     # Enable quiet_mode if not verbose
@@ -85,5 +85,12 @@ else
   done
 
   export ALL_PROXY=socks5://localhost:$TS_PORT/
+  
+  # Start proxychains4-daemon if configured
+  if [ "$TS_ACCEPT_DNS" = "true" ]; then
+    log "Starting proxychains4-daemon on 127.0.0.1:1053"
+    proxychains4-daemon 127.0.0.1:1053 &
+  fi
+
   log "Tailscale started"
 fi
