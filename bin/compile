@@ -53,10 +53,11 @@ else
 fi
 
 if [ -z "${TAILSCALE_BUILD_TS_VERSION:-}" ] ; then
-  export TAILSCALE_BUILD_TS_VERSION=1.42.0
-  log "No Tailscale version specified in TAILSCALE_BUILD_TS_VERSION config var. Defaulting to $TAILSCALE_BUILD_TS_VERSION."
+  log "No Tailscale version specified. using 'latest'."
+  TS_URL="https://pkgs.tailscale.com/stable/tailscale_latest_${TAILSCALE_BUILD_TS_TARGETARCH}.tgz"
 else
-  log "Using Tailscale version from TAILSCALE_BUILD_TS_VERSION config var: $TAILSCALE_BUILD_TS_VERSION"
+  log "Using Tailscale version from config: $TAILSCALE_BUILD_TS_VERSION"
+  TS_URL="https://pkgs.tailscale.com/stable/tailscale_${TAILSCALE_BUILD_TS_VERSION}_${TAILSCALE_BUILD_TS_TARGETARCH}.tgz"
 fi
 
 if [ -z "${TAILSCALE_BUILD_PROXYCHAINS_REPO:-}" ] ; then
@@ -72,9 +73,9 @@ log "Add Tailscale to the PATH"
 mkdir -p "$BUILD_DIR/vendor/tailscale"
 export PATH="$BUILD_DIR/vendor/tailscale:$PATH"
 
-log "Fetch Tailscale"
-curl -sL "https://pkgs.tailscale.com/stable/tailscale_${TAILSCALE_BUILD_TS_VERSION}_${TAILSCALE_BUILD_TS_TARGETARCH}.tgz" \
-  | tar -zxf - -C "${BUILD_DIR}/vendor/tailscale" --strip=1 tailscale_${TAILSCALE_BUILD_TS_VERSION}_${TAILSCALE_BUILD_TS_TARGETARCH}/tailscaled tailscale_${TAILSCALE_BUILD_TS_VERSION}_${TAILSCALE_BUILD_TS_TARGETARCH}/tailscale
+log "Fetch Tailscale from $TS_URL"
+curl -sL "$TS_URL" \
+  | tar -zxf - -C "${BUILD_DIR}/vendor/tailscale" --strip-components=1
 # Mark the scripts as executable.
 chmod +x "$BUILD_DIR/vendor/tailscale/tailscale"
 chmod +x "$BUILD_DIR/vendor/tailscale/tailscaled"
@@ -112,6 +113,7 @@ mkdir -p "$BUILD_DIR/vendor/proxychains-ng"
 cp -r "$BUILDPACK_DIR/conf" "$BUILD_DIR/vendor/proxychains-ng/conf"
 echo 'export PATH="/app/vendor/proxychains-ng/bin:$PATH"' >> $BUILD_DIR/.profile.d/heroku-tailscale-buildpack.sh 2>&1 | indent
 echo 'export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/app/vendor/proxychains-ng/lib";' >> $BUILD_DIR/.profile.d/heroku-tailscale-buildpack.sh 2>&1 | indent
+echo 'export PROXYCHAINS_CONF_FILE="/app/vendor/proxychains-ng/conf/proxychains.conf"' >> $BUILD_DIR/.profile.d/heroku-tailscale-buildpack.sh 2>&1 | indent
 
 if [[ "${TAILSCALE_BUILD_EXCLUDE_START_SCRIPT_FROM_PROFILE_D:-}" != "True" ]]; then
   # Add the line to start tailscale to the end of the file

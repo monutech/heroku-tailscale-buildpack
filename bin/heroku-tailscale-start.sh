@@ -20,24 +20,48 @@ else
     if [ -z "$HEROKU_APP_NAME" ]; then
       tailscale_hostname=$(hostname)
     else
-      # Only use the first 8 characters of the commit sha.
-      # Swap the . and _ in the dyno with a - since tailscale doesn't
-      # allow for periods.
-      DYNO=${DYNO//./-}
-      DYNO=${DYNO//_/-}
-      tailscale_hostname=${HEROKU_SLUG_COMMIT:0:8}"-$DYNO-$HEROKU_APP_NAME"
+      # Custom hostname logic: [APP_NAME]-[DYNO]
+      # Clean dots from DYNO (web.1 -> web-1)
+      SAFE_DYNO=${DYNO//./-}
+      tailscale_hostname="${HEROKU_APP_NAME}-${SAFE_DYNO}"
     fi
   else
     tailscale_hostname="$TAILSCALE_HOSTNAME"
   fi
   log "Using Tailscale hostname=$tailscale_hostname"
 
-  tailscaled -verbose ${TAILSCALED_VERBOSE:-0} --tun=userspace-networking --socks5-server=localhost:1055 &
-  until tailscale up \
+  # Dynamically configure port
+  TS_PORT=${TAILSCALE_PORT:-10527}
+  TS_ACCEPT_DNS=${TAILSCALE_ACCEPT_DNS:-true}
+  TS_ACCEPT_ROUTES=${TAILSCALE_ACCEPT_ROUTES:-true}
+  
+  # Update proxychains.conf
+  if [ -n "${PROXYCHAINS_CONF_FILE:-}" ] && [ -f "$PROXYCHAINS_CONF_FILE" ]; then
+    log "Configuring proxychains to use port $TS_PORT"
+    # Set port
+    sed -i "s/^socks5.*/socks5 127.0.0.1 $TS_PORT/" "$PROXYCHAINS_CONF_FILE"
+    
+    # Enable proxy_dns if MagicDNS is enabled
+    if [ "$TS_ACCEPT_DNS" = "true" ]; then
+      log "Enabling proxy_dns for MagicDNS"
+      sed -i 's/^#proxy_dns/proxy_dns/' "$PROXYCHAINS_CONF_FILE"
+    fi
+  fi
+
+  # Start tailscaled silently in background
+  tailscaled -verbose ${TAILSCALED_VERBOSE:-0} --tun=userspace-networking --socks5-server=localhost:$TS_PORT --state=$HOME/.tailscale.state --socket=$HOME/tailscaled.sock &
+  
+  EXTRA_FLAGS=""
+  if [ -n "${TAILSCALE_LOGIN_SERVER:-}" ]; then
+    EXTRA_FLAGS="$EXTRA_FLAGS --login-server=${TAILSCALE_LOGIN_SERVER}"
+  fi
+
+  until tailscale --socket=$HOME/tailscaled.sock up \
     --authkey=${TAILSCALE_AUTH_KEY} \
     --hostname="$tailscale_hostname" \
-    --accept-dns=${TAILSCALE_ACCEPT_DNS:-true} \
-    --accept-routes=${TAILSCALE_ACCEPT_ROUTES:-true} \
+    $EXTRA_FLAGS \
+    --accept-dns=$TS_ACCEPT_DNS \
+    --accept-routes=$TS_ACCEPT_ROUTES \
     --advertise-exit-node=${TAILSCALE_ADVERTISE_EXIT_NODE:-false} \
     --shields-up=${TAILSCALE_SHIELDS_UP:-false}
   do
@@ -45,6 +69,6 @@ else
     sleep 5
   done
 
-  export ALL_PROXY=socks5://localhost:1055/
+  export ALL_PROXY=socks5://localhost:$TS_PORT/
   log "Tailscale started"
 fi

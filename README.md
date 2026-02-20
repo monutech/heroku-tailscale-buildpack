@@ -13,6 +13,16 @@ This is based on https://tailscale.com/kb/1107/heroku/.
 
 Thank you to @rdotts, @kongmadai, @mvisonneau for their work on tailscale-docker and tailscale-heroku.
 
+## Proxychains Quick Reference
+The buildpack installs `proxychains4` in the PATH. You can use it to wrap any command (SSH, SFTP, etc) to force it through the Tailscale proxy:
+
+```bash
+heroku run proxychains4 sftp user@100.x.y.z
+heroku run proxychains4 ssh user@100.x.y.z
+heroku run proxychains4 python manage.py shell
+```
+
+
 ## Usage
 
 To set up your Heroku application, add the buildpack and ``TAILSCALE_AUTH_KEY``
@@ -30,8 +40,11 @@ To have your processes connect through the Tailscale proxy, you need to update y
 ``Procfile``. Here's an example for a Django project with a Celery worker:
 
 ```
-web: proxychains4 -f vendor/proxychains-ng/conf/proxychains.conf uvicorn --host 0.0.0.0 --port "$PORT" myproject.project.asgi:application
-worker: proxychains4 -f vendor/proxychains-ng/conf/proxychains.conf celery -A myproject.project worker
+web: proxychains4 uvicorn --host 0.0.0.0 --port "$PORT" myproject.project.asgi:application
+worker: proxychains4 celery -A myproject.project worker
+```
+
+**Note:** The buildpack sets `ALL_PROXY=socks5://localhost:10527/` automatically, so many Python/Go/Node apps will use the proxy without `proxychains4`.
 ```
 
 ## Testing the integration
@@ -78,11 +91,12 @@ The following settings are available for configuration via environment variables
   \"TagOwners\" to be able to apply tags. Defaults to none.
 - ``TAILSCALE_AUTH_KEY`` - Provide an auth key to automatically authenticate the node as your 
   user account. **This must be set.**
+- ``TAILSCALE_LOGIN_SERVER`` - (Optional) URL for a self-hosted Headscale instance (e.g., `https://headscale.example.com`).
+  **Note:** When using Headscale, generate your keys with `--ephemeral` to prevent "zombie" nodes.
 - ``TAILSCALE_HOSTNAME`` - Provide a hostname to use for the device instead of the one provided 
   by the OS. Note that this will change the machine name used in MagicDNS. Defaults to the 
   hostname of the application (a guid). If you have [Heroku Labs runtime-dyno-metadata](https://devcenter.heroku.com/articles/dyno-metadata)
-  enabled, it defaults to ``[commit]-[dyno]-[appname]``.
-- ``TAILSCALE_SHIELDS_UP"`` - Block incoming connections from other devices on your Tailscale 
+  enabled, it defaults to ``[appname]-[dyno]`` (e.g. `myapp-web-1`). Enable it with: `heroku labs:enable runtime-dyno-metadata -a <app-name>`- ``TAILSCALE_SHIELDS_UP"`` - Block incoming connections from other devices on your Tailscale 
   network. Useful for personal devices that only make outgoing connections. Defaults to off.
 - ``TAILSCALED_VERBOSE`` - Controls verbosity for the tailscaled command. Defaults to 0.
 
